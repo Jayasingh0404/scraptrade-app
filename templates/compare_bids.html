@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Compare Bids — ScrapTrade Hub{% endblock %}
+{% block content %}
+
+<div class="flex justify-between items-start mb-2">
+  <div>
+    <a href="{{ url_for('request_detail', request_id=req['id']) }}" class="text-xs text-rust font-medium hover:underline">&larr; Back to request</a>
+    <h1 class="text-2xl font-bold text-navy mt-1">Compare Bids: {{ req['material_type'] }}</h1>
+    <p class="text-sm text-slate-500">Needed {{ req['required_quantity'] }} {{ req['unit'] }} &middot; max {{ req['max_price']|money }}/{{ req['unit'] }} &middot; {{ req['location'] }}</p>
+  </div>
+  {{ req['status']|badge|safe }}
+</div>
+
+<div class="grid gap-4 mt-6">
+  {% for b in bids %}
+  <div class="card p-5 {{ 'opacity-60' if b['status'] not in ('active','accepted') else '' }}">
+    <div class="grid md:grid-cols-4 gap-4 items-center">
+      <div>
+        <p class="font-bold text-navy">{{ b['business_name'] or b['full_name'] }}</p>
+        <p class="text-xs text-slate-500">
+          {{ 'KYC Verified' if b['kyc_status'] == 'verified' else 'KYC Pending' }}
+          {% if b['seller_type'] %} &middot; {{ b['seller_type']|replace('_',' ')|title }}{% endif %}
+        </p>
+        <p class="text-xs text-slate-500 mt-1">Reliability {{ b['reliability_score'] }}/100 &middot; {{ b['successful_deals'] }} deals &middot; {{ b['disputes_count'] }} disputes</p>
+      </div>
+
+      <div>
+        <span class="text-slate-400 text-xs block">Offered price</span>
+        <span class="font-bold text-navy text-lg">{{ b['offered_price']|money }}/{{ req['unit'] }}</span>
+        <p class="text-xs {{ 'text-emerald-600' if b['offered_price'] <= req['max_price'] else 'text-amber-600' }}">
+          {{ 'Within your budget' if b['offered_price'] <= req['max_price'] else 'Above your max price' }}
+        </p>
+      </div>
+
+      <div>
+        <span class="text-slate-400 text-xs block">Quantity &amp; grade</span>
+        <span class="font-semibold">{{ b['available_quantity'] }} {{ req['unit'] }}</span>
+        <p class="text-xs text-slate-500">{{ b['grade'] or 'Grade not specified' }} &middot; {{ b['delivery_option']|title }}</p>
+        {% if b['message'] %}<p class="text-xs text-slate-400 mt-1">&ldquo;{{ b['message'] }}&rdquo;</p>{% endif %}
+      </div>
+
+      <div class="text-right">
+        {{ b['status']|badge|safe }}
+        {% if b['status'] == 'active' and req['status'] == 'open' %}
+        <div class="flex gap-2 justify-end mt-2">
+          <form method="POST" action="{{ url_for('accept_reverse_bid', request_id=req['id'], bid_id=b['id']) }}">
+            <button onclick="return confirm('Accept this bid? An order will be created and all other bids will be rejected.')" class="bg-emerald-600 text-white px-3 py-1.5 rounded-md text-xs font-semibold hover:bg-emerald-700">Accept</button>
+          </form>
+          <form method="POST" action="{{ url_for('reject_reverse_bid', request_id=req['id'], bid_id=b['id']) }}">
+            <button class="border border-red-400 text-red-600 px-3 py-1.5 rounded-md text-xs font-semibold hover:bg-red-50">Reject</button>
+          </form>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <p class="text-slate-500">No bids have been submitted on this request yet.</p>
+  {% endfor %}
+</div>
+
+{% endblock %}

@@ -1,0 +1,17 @@
+services:
+  scraptrade-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scraptrade_app
+    ports:
+      - "8000:8000"
+    environment:
+      - SECRET_KEY=scraptrade-secure-production-key-2026
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      - PORT=8000
+    volumes:
+      - ./instance:/app/instance
+      - ./static/uploads:/app/static/uploads
+    restart: unless-stopped

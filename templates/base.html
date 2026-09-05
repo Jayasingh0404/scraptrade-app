@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}ScrapTrade Hub{% endblock %}</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          navy: '#1B2340',
+          rust: '#C1502E',
+          cream: '#F2F1EE',
+        }
+      }
+    }
+  }
+</script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="bg-cream min-h-screen flex flex-col text-slate-800">
+
+<nav class="bg-navy text-white sticky top-0 z-40 shadow-md">
+  <div class="max-w-6xl mx-auto px-4 flex items-center justify-between h-16">
+    <a href="{{ url_for('index') }}" class="flex items-center gap-2 font-bold text-lg tracking-tight">
+      <span class="w-8 h-8 rounded bg-rust flex items-center justify-center text-white text-sm font-black">ST</span>
+      ScrapTrade Hub
+    </a>
+    <div class="flex items-center gap-5 text-sm font-medium">
+      <a href="{{ url_for('browse_listings') }}" class="hover:text-rust transition">Marketplace</a>
+      {% if g.user %}
+        <a href="{{ url_for('dashboard') }}" class="hover:text-rust transition">Dashboard</a>
+        {% if g.user['role'] == 'buyer' %}
+          <a href="{{ url_for('new_request') }}" class="hover:text-rust transition">Post Buying Request</a>
+          <a href="{{ url_for('my_requests') }}" class="hover:text-rust transition">My Requests</a>
+        {% elif g.user['role'] == 'seller' %}
+          <a href="{{ url_for('browse_requests') }}" class="hover:text-rust transition">Buyer Requests</a>
+          <a href="{{ url_for('my_bids') }}" class="hover:text-rust transition">My Bids</a>
+        {% endif %}
+        <a href="{{ url_for('notifications') }}" class="relative hover:text-rust transition">
+          Notifications
+          {% if unread_notifications and unread_notifications > 0 %}
+            <span class="absolute -top-2 -right-3 bg-rust text-white text-[10px] rounded-full px-1.5 py-0.5">{{ unread_notifications }}</span>
+          {% endif %}
+        </a>
+        <span class="text-slate-300 hidden sm:inline">{{ g.user['full_name'] }} &middot; <span class="uppercase text-xs text-rust">{{ g.user['role'] }}</span></span>
+        <a href="{{ url_for('logout') }}" class="bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-md transition">Log out</a>
+      {% else %}
+        <a href="{{ url_for('login') }}" class="hover:text-rust transition">Log in</a>
+        <a href="{{ url_for('signup') }}" class="bg-rust hover:bg-rust/90 px-4 py-1.5 rounded-md transition">Sign up</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+
+<div class="max-w-6xl mx-auto w-full px-4 mt-4">
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="mb-3 px-4 py-3 rounded-md text-sm font-medium {{ 'bg-red-100 text-red-800 border border-red-200' if category == 'error' else 'bg-emerald-100 text-emerald-800 border border-emerald-200' }}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+</div>
+
+<main class="flex-1 max-w-6xl mx-auto w-full px-4 py-6">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="bg-navy text-slate-300 text-sm mt-12">
+  <div class="max-w-6xl mx-auto px-4 py-6 flex flex-col sm:flex-row justify-between gap-2">
+    <span>&copy; 2026 ScrapTrade Hub &mdash; Turning Industrial Waste into Valuable Resources</span>
+    <span class="text-slate-400">MVP Demo Build</span>
+  </div>
+</footer>
+
+</body>
+</html>

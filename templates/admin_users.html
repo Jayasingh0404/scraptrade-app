@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Manage Users — ScrapTrade Hub{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl font-bold text-navy mb-6">Manage Users</h1>
+
+<div class="card overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-500 text-left">
+      <tr><th class="p-3">Name</th><th class="p-3">Role</th><th class="p-3">Business</th><th class="p-3">Reliability</th><th class="p-3">KYC</th><th class="p-3">Action</th></tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr class="border-t hover:bg-slate-50">
+        <td class="p-3 font-medium text-navy">{{ u['full_name'] }}<br><span class="text-xs text-slate-400">{{ u['email'] }}</span></td>
+        <td class="p-3 uppercase text-xs">{{ u['role'] }}</td>
+        <td class="p-3">{{ u['business_name'] or '—' }}</td>
+        <td class="p-3">{{ u['reliability_score'] }}/100</td>
+        <td class="p-3">{{ u['kyc_status']|badge|safe }}</td>
+        <td class="p-3">
+          {% if u['kyc_status'] != 'verified' %}
+          <form method="POST" action="{{ url_for('admin_set_kyc', user_id=u['id'], status='verified') }}" class="inline">
+            <button class="text-emerald-700 text-xs font-semibold hover:underline">Verify</button>
+          </form>
+          {% endif %}
+          {% if u['kyc_status'] != 'rejected' %}
+          <form method="POST" action="{{ url_for('admin_set_kyc', user_id=u['id'], status='rejected') }}" class="inline ml-2">
+            <button class="text-red-600 text-xs font-semibold hover:underline">Reject</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

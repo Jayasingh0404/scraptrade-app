@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Notifications — ScrapTrade Hub{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl font-bold text-navy mb-6">Notifications</h1>
+
+<div class="space-y-3">
+  {% for n in items %}
+  <div class="card p-4">
+    <div class="flex justify-between items-start">
+      <p class="font-semibold text-navy text-sm">{{ n['title'] }}</p>
+      <span class="text-xs text-slate-400">{{ n['created_at'] }}</span>
+    </div>
+    <p class="text-sm text-slate-600 mt-1">{{ n['message'] }}</p>
+    {% if n['order_id'] %}
+      <a href="{{ url_for('order_detail', order_id=n['order_id']) }}" class="text-xs text-rust font-medium hover:underline mt-2 inline-block">View order &rarr;</a>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="text-sm text-slate-400">No notifications yet.</p>
+  {% endfor %}
+</div>
+
+{% endblock %}

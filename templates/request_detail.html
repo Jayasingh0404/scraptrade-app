@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}{{ req['material_type'] }} Request — ScrapTrade Hub{% endblock %}
+{% block content %}
+
+<div class="grid md:grid-cols-3 gap-8">
+  <div class="md:col-span-2">
+    <div class="flex justify-between items-start mb-2">
+      <div>
+        <span class="text-xs uppercase tracking-wide text-rust font-semibold">{{ req['category'] }}</span>
+        <h1 class="text-3xl font-bold text-navy">{{ req['material_type'] }}</h1>
+      </div>
+      {{ req['status']|badge|safe }}
+    </div>
+    <p class="text-slate-500 mb-6">{{ req['grade'] or 'Grade unspecified' }} &middot; {{ req['location'] }}</p>
+
+    {% if req['image_url'] %}
+    <div class="card overflow-hidden mb-6 p-0 border">
+      <img src="{{ req['image_url'] }}" alt="{{ req['material_type'] }}" class="w-full h-64 object-cover">
+    </div>
+    {% endif %}
+
+    <div class="card p-5 mb-6">
+      <h2 class="font-semibold text-navy mb-2">Requirement details</h2>
+      <p class="text-slate-600 text-sm">{{ req['description'] or 'No additional description provided.' }}</p>
+      <div class="grid grid-cols-3 gap-4 mt-5 text-sm">
+        <div><span class="text-slate-400 block">Quantity needed</span><span class="font-semibold">{{ req['required_quantity'] }} {{ req['unit'] }}</span></div>
+        <div><span class="text-slate-400 block">Max price</span><span class="font-semibold">{{ req['max_price']|money }}/{{ req['unit'] }}</span></div>
+        <div><span class="text-slate-400 block">Preference</span><span class="font-semibold">{{ req['delivery_preference']|title }}</span></div>
+        <div><span class="text-slate-400 block">Expires</span><span class="font-semibold">{{ req['expiry_date'] }}</span></div>
+        <div><span class="text-slate-400 block">Active bids</span><span class="font-semibold">{{ bid_count }}</span></div>
+        <div><span class="text-slate-400 block">Buyer reliability</span><span class="font-semibold">{{ req['reliability_score'] }}/100</span></div>
+      </div>
+    </div>
+
+    {% if is_owner %}
+    <div class="card p-5">
+      <div class="flex justify-between items-center">
+        <div>
+          <h2 class="font-semibold text-navy mb-1">Bids on this request</h2>
+          <p class="text-sm text-slate-500">{{ bid_count }} active bid{{ 's' if bid_count != 1 else '' }} so far.</p>
+        </div>
+        <a href="{{ url_for('compare_bids', request_id=req['id']) }}" class="bg-navy text-white px-4 py-2 rounded-md text-sm font-semibold hover:bg-navy/90">Compare Bids &rarr;</a>
+      </div>
+      {% if req['status'] == 'open' %}
+      <form method="POST" action="{{ url_for('cancel_request', request_id=req['id']) }}" class="mt-4">
+        <button onclick="return confirm('Cancel this buying request? Any active bids will be withdrawn.')" class="text-xs text-red-600 font-semibold hover:underline">Cancel this request</button>
+      </form>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div>
+    <div class="card p-5 mb-5">
+      <h2 class="font-semibold text-navy mb-2">Posted by</h2>
+      <p class="font-semibold">{{ req['business_name'] or req['full_name'] }}</p>
+      <p class="text-sm text-slate-500">{{ req['buyer_location'] }}</p>
+      <p class="text-sm text-slate-500 mt-1">Reliability score: <span class="font-semibold text-navy">{{ req['reliability_score'] }}/100</span></p>
+    </div>
+
+    {% if g.user['role'] == 'seller' %}
+      {% if my_bid %}
+      <div class="card p-5">
+        <h2 class="font-semibold text-navy mb-2">Your bid</h2>
+        <p class="text-sm mb-1">{{ my_bid['status']|badge|safe }}</p>
+        <p class="text-sm text-slate-600">{{ my_bid['offered_price']|money }}/{{ req['unit'] }} &middot; {{ my_bid['available_quantity'] }} {{ req['unit'] }}</p>
+        {% if my_bid['status'] == 'active' %}
+        <form method="POST" action="{{ url_for('withdraw_reverse_bid', bid_id=my_bid['id']) }}" class="mt-3">
+          <button class="text-xs text-red-600 font-semibold hover:underline">Withdraw bid</button>
+        </form>
+        {% endif %}
+      </div>
+      {% elif req['status'] == 'open' and can_bid %}
+      <div class="card p-5">
+        <h2 class="font-semibold text-navy mb-3">Submit a bid</h2>
+        <form method="POST" class="space-y-3">
+          <div>
+            <label class="block text-xs font-medium mb-1">Your price per {{ req['unit'] }} (\u20b9)</label>
+            <input type="number" step="0.01" min="0.01" name="offered_price" required class="w-full border rounded-md px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-medium mb-1">Quantity you can supply ({{ req['unit'] }})</label>
+            <input type="number" step="0.01" min="0.01" name="available_quantity" value="{{ req['required_quantity'] }}" required class="w-full border rounded-md px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-medium mb-1">Grade / quality you're offering</label>
+            <input name="grade" value="{{ req['grade'] }}" class="w-full border rounded-md px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-medium mb-1">Delivery option</label>
+            <select name="delivery_option" class="w-full border rounded-md px-3 py-2 text-sm">
+              <option value="pickup">Buyer picks up</option>
+              <option value="delivery">I will deliver</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs font-medium mb-1">Bid expiry (optional)</label>
+            <input type="date" name="expiry_date" class="w-full border rounded-md px-3 py-2 text-sm">
+          </div>
+          <div>
+            <label class="block text-xs font-medium mb-1">Message (optional)</label>
+            <textarea name="message" rows="2" class="w-full border rounded-md px-3 py-2 text-sm"></textarea>
+          </div>
+          <button type="submit" class="w-full bg-rust text-white py-2 rounded-md text-sm font-semibold hover:bg-rust/90">Submit bid</button>
+        </form>
+      </div>
+      {% elif not can_bid %}
+      <div class="card p-5 text-sm text-slate-500">
+        Your account must be KYC-verified before you can bid on buyer requests.
+      </div>
+      {% else %}
+      <div class="card p-5 text-sm text-slate-500">
+        This request is no longer open for bidding.
+      </div>
+      {% endif %}
+    {% elif not is_owner %}
+    <div class="card p-5 text-sm text-slate-500">
+      Only sellers can bid on buyer requests.
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+{% endblock %}

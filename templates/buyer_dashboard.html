@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Buyer Dashboard — ScrapTrade Hub{% endblock %}
+{% block content %}
+
+<div class="flex justify-between items-center mb-6">
+  <div>
+    <h1 class="text-2xl font-bold text-navy">Buyer Dashboard</h1>
+    <p class="text-sm text-slate-500">{{ g.user['business_name'] or g.user['full_name'] }} &middot; KYC: {{ g.user['kyc_status']|badge|safe }}</p>
+  </div>
+  <div class="flex gap-2">
+    <a href="{{ url_for('new_request') }}" class="border border-navy text-navy px-5 py-2.5 rounded-md font-semibold hover:bg-navy hover:text-white transition">Post Buying Request</a>
+    <a href="{{ url_for('browse_listings') }}" class="bg-rust text-white px-5 py-2.5 rounded-md font-semibold hover:bg-rust/90">Browse Marketplace</a>
+  </div>
+</div>
+
+<div class="grid sm:grid-cols-4 gap-4 mb-8">
+  <div class="card p-4 text-center"><div class="text-2xl font-bold text-navy">{{ active_orders }}</div><div class="text-xs text-slate-500 mt-1">Active Orders</div></div>
+  <div class="card p-4 text-center"><div class="text-2xl font-bold text-navy">{{ completed_count }}</div><div class="text-xs text-slate-500 mt-1">Completed Orders</div></div>
+  <div class="card p-4 text-center"><div class="text-2xl font-bold text-navy">{{ g.user['reliability_score'] }}</div><div class="text-xs text-slate-500 mt-1">Reliability Score</div></div>
+  <a href="{{ url_for('my_requests') }}" class="card p-4 text-center hover:shadow-md transition"><div class="text-2xl font-bold text-navy">{{ open_requests_count }}</div><div class="text-xs text-slate-500 mt-1">Open Buying Requests</div></a>
+</div>
+
+<h2 class="text-lg font-bold text-navy mb-3">My Bids</h2>
+<div class="card overflow-hidden mb-8">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-500 text-left">
+      <tr><th class="p-3">Material</th><th class="p-3">My Bid</th><th class="p-3">Qty</th><th class="p-3">Bid Status</th><th class="p-3">Listing</th></tr>
+    </thead>
+    <tbody>
+      {% for b in bids %}
+      <tr class="border-t hover:bg-slate-50">
+        <td class="p-3 font-medium text-navy">{{ b['material_type'] }}</td>
+        <td class="p-3">{{ b['bid_price']|money }}</td>
+        <td class="p-3">{{ b['quantity'] }}</td>
+        <td class="p-3">{{ b['status']|badge|safe }}</td>
+        <td class="p-3">{{ b['listing_status']|badge|safe }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="p-4 text-center text-slate-400">No bids yet. Browse the marketplace to get started.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="text-lg font-bold text-navy mb-3">My Orders</h2>
+<div class="card overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-500 text-left">
+      <tr><th class="p-3">Order</th><th class="p-3">Material</th><th class="p-3">Source</th><th class="p-3">Amount</th><th class="p-3">Status</th></tr>
+    </thead>
+    <tbody>
+      {% for o in orders %}
+      <tr class="border-t hover:bg-slate-50">
+        <td class="p-3"><a href="{{ url_for('order_detail', order_id=o['id']) }}" class="font-medium text-navy hover:underline">#{{ o['id'] }}</a></td>
+        <td class="p-3">{{ o['material_type'] }}</td>
+        <td class="p-3 text-xs text-slate-500">{{ 'My Request' if o['order_type'] == 'reverse' else 'Marketplace Bid' }}</td>
+        <td class="p-3">{{ o['total_amount']|money }}</td>
+        <td class="p-3">{{ o['status']|badge|safe }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="p-4 text-center text-slate-400">No orders yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Buyer Requests — ScrapTrade Hub{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl font-bold text-navy mb-1">Buyer Requests</h1>
+<p class="text-sm text-slate-500 mb-4">Verified sellers can bid to fulfil these open purchase requests.</p>
+
+{% if not eligible %}
+<div class="mb-4 px-4 py-3 rounded-md text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">
+  Your KYC verification is still pending. You can browse requests now, but you'll need to be verified before you can submit a bid.
+</div>
+{% endif %}
+
+<form method="GET" class="card p-4 mb-6 grid sm:grid-cols-3 gap-3">
+  <input name="material" value="{{ filters.material }}" placeholder="Material or category" class="border rounded-md px-3 py-2 text-sm sm:col-span-2">
+  <input name="location" value="{{ filters.location }}" placeholder="Location" class="border rounded-md px-3 py-2 text-sm">
+  <button type="submit" class="sm:col-span-3 bg-navy text-white py-2 rounded-md text-sm font-semibold hover:bg-navy/90">Search</button>
+</form>
+
+<div class="grid md:grid-cols-3 gap-5">
+  {% for r in requests %}
+  <a href="{{ url_for('request_detail', request_id=r['id']) }}" class="card p-5 hover:shadow-md transition block">
+    <div class="flex justify-between items-start mb-2">
+      <span class="text-xs uppercase tracking-wide text-rust font-semibold">{{ r['category'] }}</span>
+      {% if r['id'] in my_active_ids %}
+        <span class="badge badge-held">You've Bid</span>
+      {% else %}
+        {{ 'active'|badge|safe }}
+      {% endif %}
+    </div>
+    <h3 class="font-bold text-navy text-lg mb-1">{{ r['material_type'] }}</h3>
+    <p class="text-xs text-slate-500 mb-1">{{ r['grade'] or 'Grade unspecified' }}</p>
+    <p class="text-sm text-slate-500 mb-3">{{ r['required_quantity']|round(0) }} {{ r['unit'] }} &middot; {{ r['location'] }}</p>
+    <div class="flex justify-between items-center">
+      <span class="font-bold text-navy">Up to {{ r['max_price']|money }}/{{ r['unit'] }}</span>
+      <span class="text-xs text-slate-500">{{ r['bid_count'] }} bid{{ 's' if r['bid_count'] != 1 else '' }}</span>
+    </div>
+    <p class="text-xs text-slate-400 mt-2">Expires {{ r['expiry_date'] }} &middot; {{ r['delivery_preference']|title }} &middot; Buyer reliability {{ r['reliability_score'] }}</p>
+  </a>
+  {% else %}
+  <p class="text-slate-500 col-span-3">No open buyer requests match your search right now.</p>
+  {% endfor %}
+</div>
+
+{% endblock %}

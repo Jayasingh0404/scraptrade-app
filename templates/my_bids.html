@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}My Bids — ScrapTrade Hub{% endblock %}
+{% block content %}
+
+<div class="flex justify-between items-center mb-6">
+  <h1 class="text-2xl font-bold text-navy">My Bids on Buyer Requests</h1>
+  <a href="{{ url_for('browse_requests') }}" class="bg-rust text-white px-5 py-2.5 rounded-md font-semibold hover:bg-rust/90">Browse Buyer Requests</a>
+</div>
+
+<div class="card overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-500 text-left">
+      <tr><th class="p-3">Material</th><th class="p-3">My Offer</th><th class="p-3">Qty</th><th class="p-3">Bid Status</th><th class="p-3">Request Status</th><th class="p-3"></th></tr>
+    </thead>
+    <tbody>
+      {% for b in bids %}
+      <tr class="border-t hover:bg-slate-50">
+        <td class="p-3"><a href="{{ url_for('request_detail', request_id=b['request_id']) }}" class="font-medium text-navy hover:underline">{{ b['material_type'] }}</a></td>
+        <td class="p-3">{{ b['offered_price']|money }}/{{ b['unit'] }}</td>
+        <td class="p-3">{{ b['available_quantity'] }} {{ b['unit'] }}</td>
+        <td class="p-3">{{ b['status']|badge|safe }}</td>
+        <td class="p-3">{{ b['request_status']|badge|safe }}</td>
+        <td class="p-3">
+          {% if b['status'] == 'active' %}
+          <form method="POST" action="{{ url_for('withdraw_reverse_bid', bid_id=b['id']) }}">
+            <button onclick="return confirm('Withdraw this bid?')" class="text-xs text-red-600 font-semibold hover:underline">Withdraw</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="p-4 text-center text-slate-400">You haven't bid on any buyer requests yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}My Requests — ScrapTrade Hub{% endblock %}
+{% block content %}
+
+<div class="flex justify-between items-center mb-6">
+  <h1 class="text-2xl font-bold text-navy">My Buying Requests</h1>
+  <a href="{{ url_for('new_request') }}" class="bg-rust text-white px-5 py-2.5 rounded-md font-semibold hover:bg-rust/90">+ Post Buying Request</a>
+</div>
+
+<div class="card overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-500 text-left">
+      <tr><th class="p-3">Material</th><th class="p-3">Qty</th><th class="p-3">Max Price</th><th class="p-3">Bids</th><th class="p-3">Expires</th><th class="p-3">Status</th><th class="p-3"></th></tr>
+    </thead>
+    <tbody>
+      {% for r in requests %}
+      <tr class="border-t hover:bg-slate-50">
+        <td class="p-3"><a href="{{ url_for('request_detail', request_id=r['id']) }}" class="font-medium text-navy hover:underline">{{ r['material_type'] }}</a></td>
+        <td class="p-3">{{ r['required_quantity'] }} {{ r['unit'] }}</td>
+        <td class="p-3">{{ r['max_price']|money }}</td>
+        <td class="p-3">
+          {% if r['bid_count'] > 0 %}
+          <a href="{{ url_for('compare_bids', request_id=r['id']) }}" class="text-rust font-medium hover:underline">{{ r['bid_count'] }} bid{{ 's' if r['bid_count'] != 1 else '' }} &rarr;</a>
+          {% else %}0{% endif %}
+        </td>
+        <td class="p-3">{{ r['expiry_date'] }}</td>
+        <td class="p-3">{{ r['status']|badge|safe }}</td>
+        <td class="p-3">
+          {% if r['status'] == 'open' %}
+          <form method="POST" action="{{ url_for('cancel_request', request_id=r['id']) }}">
+            <button onclick="return confirm('Cancel this request?')" class="text-xs text-red-600 font-semibold hover:underline">Cancel</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="7" class="p-4 text-center text-slate-400">No buying requests yet. Post one to get bids from verified sellers.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
