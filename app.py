@@ -1,11 +1,14 @@
 import os
 import secrets
 import json
+import urllib.request
+import urllib.parse
+import urllib.error
 from functools import wraps
 from datetime import datetime, date, timedelta
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                    session, flash, g, abort, send_from_directory)
+                    session, flash, g, abort, send_from_directory, jsonify)
 from werkzeug.security import generate_password_hash, check_password_hash
 from werkzeug.utils import secure_filename
 
@@ -21,6 +24,7 @@ app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16 MB max
 
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "")
 
 
 def allowed_file(filename):
@@ -307,42 +311,182 @@ def reset_password(token):
 
 
 # ---------------------------------------------------------------------------
-# Google Authentication (OAuth & Fast Simulated One-Click Sign-In)
+# Google Authentication (OAuth 2.0 / OpenID Connect & Interactive Dev Flow)
 # ---------------------------------------------------------------------------
+
+def exchange_google_code_for_user(code, redirect_uri):
+    """Exchanges Google authorization code for access token and retrieves user profile."""
+    client_id = app.config.get("GOOGLE_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID", "")
+    client_secret = app.config.get("GOOGLE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET", "")
+    
+    if not client_id or not client_secret:
+        return None, "Google OAuth client credentials are not configured on the server."
+
+    token_url = "https://oauth2.googleapis.com/token"
+    token_params = {
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code",
+    }
+    encoded_data = urllib.parse.urlencode(token_params).encode("utf-8")
+    req = urllib.request.Request(
+        token_url,
+        data=encoded_data,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "User-Agent": "ScrapTrade-OAuth/1.0",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            token_response = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        err_text = e.read().decode("utf-8", errors="ignore")
+        return None, f"Google token exchange failed ({e.code}): {err_text}"
+    except Exception as e:
+        return None, f"Network error connecting to Google authentication: {str(e)}"
+
+    access_token = token_response.get("access_token")
+    if not access_token:
+        return None, "Google did not provide an access token in the response."
+
+    # Fetch user profile using OpenID Connect userinfo endpoint
+    userinfo_url = "https://www.googleapis.com/oauth2/v3/userinfo"
+    user_req = urllib.request.Request(
+        userinfo_url,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": "ScrapTrade-OAuth/1.0",
+        },
+    )
+
+    try:
+        with urllib.request.urlopen(user_req, timeout=10) as resp:
+            user_profile = json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        return None, f"Failed to retrieve Google profile: {str(e)}"
+
+    return user_profile, None
+
+
+def process_google_user(email, full_name, google_id, avatar_url=None):
+    """Logs in an existing user or stores pending user state for role onboarding."""
+    if not email:
+        return False, None, "Google account does not contain a verified email."
+
+    email = email.strip().lower()
+    db = get_db()
+    user = db.execute(
+        "SELECT * FROM users WHERE email=? OR (google_id IS NOT NULL AND google_id=?)",
+        (email, google_id),
+    ).fetchone()
+
+    if user:
+        # Existing account: update linked google_id / avatar if missing and log in
+        session["user_id"] = user["id"]
+        db.execute(
+            "UPDATE users SET google_id=COALESCE(google_id, ?), avatar_url=COALESCE(avatar_url, ?) WHERE id=?",
+            (google_id, avatar_url, user["id"]),
+        )
+        db.commit()
+        db.close()
+        return True, user, None
+
+    # New user: store details in session for onboarding
+    session["google_pending_user"] = {
+        "email": email,
+        "full_name": full_name or "Google User",
+        "google_id": google_id,
+        "avatar_url": avatar_url,
+    }
+    db.close()
+    return False, None, None
+
 
 @app.route("/auth/google")
 def google_auth():
-    """Initiates Google OAuth or renders the quick Google Sign-In helper."""
-    # Check if real OAuth is configured or if we use local/dev direct sign-in
-    google_client_id = app.config.get("GOOGLE_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID")
-    if google_client_id:
-        # Standard Google OAuth2 authorization redirect
-        redirect_uri = url_for("google_callback", _external=True)
-        oauth_url = (
-            f"https://accounts.google.com/o/oauth2/v2/auth?"
-            f"client_id={google_client_id}&"
-            f"response_type=code&"
-            f"scope=openid%20email%20profile&"
-            f"redirect_uri={redirect_uri}&"
-            f"state={secrets.token_urlsafe(16)}"
-        )
+    """Initiates Google OAuth 2.0 authorization redirect or opens local dev login."""
+    google_client_id = app.config.get("GOOGLE_CLIENT_ID") or os.environ.get("GOOGLE_CLIENT_ID", "")
+    google_client_secret = app.config.get("GOOGLE_CLIENT_SECRET") or os.environ.get("GOOGLE_CLIENT_SECRET", "")
+    
+    if google_client_id and google_client_secret:
+        # Generate cryptographically secure CSRF state token
+        state = secrets.token_urlsafe(32)
+        session["oauth_state"] = state
+        
+        redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI") or url_for("google_callback", _external=True)
+        query_params = {
+            "client_id": google_client_id,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "redirect_uri": redirect_uri,
+            "state": state,
+            "access_type": "online",
+            "prompt": "select_account",
+        }
+        oauth_url = f"https://accounts.google.com/o/oauth2/v2/auth?{urllib.parse.urlencode(query_params)}"
         return redirect(oauth_url)
     else:
-        # Dev / Interactive one-click Google Sign-In
+        # Render interactive Google Sign-In helper for development
         return render_template("google_signin_dev.html")
 
 
 @app.route("/auth/google/callback")
 def google_callback():
+    """Handles Google OAuth 2.0 authorization callback."""
+    # 1. Check for errors from Google consent flow
+    error = request.args.get("error")
+    if error:
+        if error == "access_denied":
+            flash("Google sign-in was cancelled.", "info")
+        else:
+            flash(f"Google sign-in error: {error}", "error")
+        return redirect(url_for("login"))
+
+    # 2. Verify CSRF state token
+    received_state = request.args.get("state")
+    saved_state = session.pop("oauth_state", None)
+    if not received_state or not saved_state or received_state != saved_state:
+        flash("Authentication session expired or security verification failed. Please try again.", "error")
+        return redirect(url_for("login"))
+
+    # 3. Retrieve authorization code
     code = request.args.get("code")
-    # In live GCP mode with GOOGLE_CLIENT_ID & SECRET, exchange code for tokens
-    flash("Google authentication callback received.", "info")
-    return redirect(url_for("dashboard"))
+    if not code:
+        flash("Authorization code missing from Google response.", "error")
+        return redirect(url_for("login"))
+
+    # 4. Exchange code for access token and user info
+    redirect_uri = os.environ.get("GOOGLE_REDIRECT_URI") or url_for("google_callback", _external=True)
+    user_info, err = exchange_google_code_for_user(code, redirect_uri)
+    if err:
+        flash(err, "error")
+        return redirect(url_for("login"))
+
+    email = user_info.get("email")
+    full_name = user_info.get("name") or user_info.get("given_name", "Google User")
+    google_id = user_info.get("sub")
+    avatar_url = user_info.get("picture")
+
+    # 5. Process user login / onboarding
+    is_existing, user, proc_err = process_google_user(email, full_name, google_id, avatar_url)
+    if proc_err:
+        flash(proc_err, "error")
+        return redirect(url_for("login"))
+
+    if is_existing:
+        flash(f"Welcome back, {user['full_name']}! Signed in with Google.", "success")
+        return redirect(url_for("dashboard"))
+    else:
+        return redirect(url_for("google_select_role"))
 
 
 @app.route("/auth/google/mock-login", methods=["POST"])
 def google_mock_login():
-    """Provides real Google Sign-In experience with instant account provisioning & role mapping."""
+    """Provides high-fidelity Google Sign-In for development and automated testing."""
     email = request.form.get("email", "").strip().lower()
     full_name = request.form.get("full_name", "").strip() or "Google User"
     google_id = request.form.get("google_id", "").strip() or f"google_{secrets.token_hex(8)}"
@@ -352,31 +496,16 @@ def google_mock_login():
         flash("Email is required for Google Sign-In.", "error")
         return redirect(url_for("login"))
 
-    db = get_db()
-    user = db.execute("SELECT * FROM users WHERE email=? OR google_id=?", (email, google_id)).fetchone()
+    is_existing, user, proc_err = process_google_user(email, full_name, google_id, avatar_url)
+    if proc_err:
+        flash(proc_err, "error")
+        return redirect(url_for("login"))
 
-    if user:
-        # User already exists - log them in directly
-        session["user_id"] = user["id"]
-        # Update google_id and avatar if missing
-        db.execute(
-            "UPDATE users SET google_id=COALESCE(google_id, ?), avatar_url=COALESCE(avatar_url, ?) WHERE id=?",
-            (google_id, avatar_url, user["id"]),
-        )
-        db.commit()
-        db.close()
+    if is_existing:
         flash(f"Signed in with Google as {user['full_name']}.", "success")
         return redirect(url_for("dashboard"))
-
-    # New user from Google - store temporary info in session and prompt role selection
-    session["google_pending_user"] = {
-        "email": email,
-        "full_name": full_name,
-        "google_id": google_id,
-        "avatar_url": avatar_url,
-    }
-    db.close()
-    return redirect(url_for("google_select_role"))
+    else:
+        return redirect(url_for("google_select_role"))
 
 
 @app.route("/auth/google/select-role", methods=["GET", "POST"])
@@ -430,6 +559,7 @@ def google_select_role():
         return redirect(url_for("dashboard"))
 
     return render_template("google_role_select.html", user_info=pending)
+
 
 
 @app.route("/dashboard")
