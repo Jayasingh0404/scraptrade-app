@@ -86,7 +86,8 @@ def ensure_schema():
     if "last_acted_by" not in bid_cols:
         conn.execute("ALTER TABLE bids ADD COLUMN last_acted_by TEXT DEFAULT 'buyer'")
     if "updated_at" not in bid_cols:
-        conn.execute("ALTER TABLE bids ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))")
+        conn.execute("ALTER TABLE bids ADD COLUMN updated_at TEXT")
+        conn.execute("UPDATE bids SET updated_at = created_at WHERE updated_at IS NULL")
 
     # Check inspections columns
     insp_cols = [row[1] for row in conn.execute("PRAGMA table_info(inspections)").fetchall()]
