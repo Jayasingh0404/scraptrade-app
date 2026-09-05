@@ -718,7 +718,7 @@ def accept_bid(listing_id, bid_id):
         abort(404)
 
     db.execute("UPDATE bids SET status='accepted' WHERE id=?", (bid_id,))
-    db.execute("UPDATE bids SET status='rejected' WHERE listing_id=? AND id != ? AND status='active'",
+    db.execute("UPDATE bids SET status='rejected' WHERE listing_id=? AND id != ? AND status IN ('active','countered')",
                (listing_id, bid_id))
     db.execute("UPDATE listings SET status='reserved' WHERE id=?", (listing_id,))
 
@@ -740,6 +740,211 @@ def accept_bid(listing_id, bid_id):
     db.close()
     flash("Bid accepted. Order created and inspection requested.", "success")
     return redirect(url_for("order_detail", order_id=order_id))
+
+
+@app.route("/seller/listings/<int:listing_id>/counter-bid/<int:bid_id>", methods=["POST"])
+@role_required("seller")
+def counter_bid(listing_id, bid_id):
+    db = get_db()
+    listing = db.execute("SELECT * FROM listings WHERE id=? AND seller_id=?", (listing_id, g.user["id"])).fetchone()
+    bid = db.execute("SELECT * FROM bids WHERE id=? AND listing_id=?", (bid_id, listing_id)).fetchone()
+    if listing is None or bid is None:
+        db.close()
+        abort(404)
+    
+    try:
+        counter_price = float(request.form["counter_price"])
+    except (KeyError, ValueError):
+        flash("Invalid counter-offer price.", "error")
+        db.close()
+        return redirect(url_for("listing_detail", listing_id=listing_id))
+
+    counter_msg = request.form.get("counter_message", "").strip()
+    db.execute(
+        """UPDATE bids SET status='countered', counter_price=?, counter_message=?,
+           last_acted_by='seller', updated_at=datetime('now') WHERE id=?""",
+        (counter_price, counter_msg, bid_id),
+    )
+    notify(db, bid["buyer_id"], "Counter-offer received",
+           f"Seller sent a counter-offer of ₹{counter_price:,.0f}/{listing['unit']} on {listing['material_type']}.", None)
+    db.commit()
+    db.close()
+    flash(f"Counter-offer of ₹{counter_price:,.0f}/{listing['unit']} sent to buyer.", "success")
+    return redirect(url_for("listing_detail", listing_id=listing_id))
+
+
+@app.route("/buyer/bids/<int:bid_id>/accept-counter", methods=["POST"])
+@role_required("buyer")
+def accept_counter_offer(bid_id):
+    db = get_db()
+    bid = db.execute("SELECT * FROM bids WHERE id=? AND buyer_id=?", (bid_id, g.user["id"])).fetchone()
+    if bid is None or bid["status"] != "countered" or not bid["counter_price"]:
+        db.close()
+        abort(404)
+    listing = db.execute("SELECT * FROM listings WHERE id=?", (bid["listing_id"],)).fetchone()
+    if listing is None or listing["status"] != "active":
+        db.close()
+        flash("Listing is no longer active.", "error")
+        return redirect(url_for("buyer_dashboard"))
+
+    agreed_price = bid["counter_price"]
+    total = agreed_price * bid["quantity"]
+    
+    db.execute("UPDATE bids SET status='accepted' WHERE id=?", (bid_id,))
+    db.execute("UPDATE bids SET status='rejected' WHERE listing_id=? AND id != ? AND status IN ('active','countered')",
+               (bid["listing_id"], bid_id))
+    db.execute("UPDATE listings SET status='reserved' WHERE id=?", (bid["listing_id"],))
+
+    cur = db.cursor()
+    cur.execute(
+        """INSERT INTO orders (order_type, listing_id, bid_id, buyer_id, seller_id,
+           material_type, category, unit, estimated_quantity, agreed_price, total_amount, status)
+           VALUES ('forward', ?,?,?,?,?,?,?,?,?,?, 'pending_inspection')""",
+        (bid["listing_id"], bid_id, g.user["id"], listing["seller_id"],
+         listing["material_type"], listing["category"], listing["unit"],
+         bid["quantity"], agreed_price, total),
+    )
+    order_id = cur.lastrowid
+    cur.execute("INSERT INTO inspections (order_id, result) VALUES (?, 'requested')", (order_id,))
+    notify(db, listing["seller_id"], "Counter-offer accepted!",
+           f"Buyer accepted your counter-offer at ₹{agreed_price:,.0f}/{listing['unit']}. Order #{order_id} created.", order_id)
+    db.commit()
+    db.close()
+    flash(f"Counter-offer accepted! Order #{order_id} has been created.", "success")
+    return redirect(url_for("order_detail", order_id=order_id))
+
+
+@app.route("/buyer/bids/<int:bid_id>/reject-counter", methods=["POST"])
+@role_required("buyer")
+def reject_counter_offer(bid_id):
+    db = get_db()
+    bid = db.execute("SELECT * FROM bids WHERE id=? AND buyer_id=?", (bid_id, g.user["id"])).fetchone()
+    if bid:
+        db.execute("UPDATE bids SET status='rejected' WHERE id=?", (bid_id,))
+        listing = db.execute("SELECT * FROM listings WHERE id=?", (bid["listing_id"],)).fetchone()
+        if listing:
+            notify(db, listing["seller_id"], "Counter-offer declined",
+                   f"Buyer declined the counter-offer on {listing['material_type']}.", None)
+        db.commit()
+    db.close()
+    flash("Counter-offer declined.", "info")
+    return redirect(url_for("buyer_dashboard"))
+
+
+# ---------------------------------------------------------------------------
+# Market Intelligence & Price Benchmarks
+# ---------------------------------------------------------------------------
+
+@app.route("/market-intelligence")
+def market_intelligence():
+    db = get_db()
+    trends = db.execute("SELECT * FROM market_price_trends ORDER BY category, material_name").fetchall()
+    recent_listings = db.execute("""
+        SELECT l.*, u.business_name, u.reliability_score 
+        FROM listings l JOIN users u ON l.seller_id = u.id 
+        WHERE l.status='active' ORDER BY l.created_at DESC LIMIT 6
+    """).fetchall()
+    db.close()
+    return render_template("market_intelligence.html", trends=trends, listings=recent_listings)
+
+
+# ---------------------------------------------------------------------------
+# Trade Passport & ESG / Digital Credibility & Invoice Financing
+# ---------------------------------------------------------------------------
+
+@app.route("/trade-passport/<int:user_id>")
+def trade_passport(user_id):
+    db = get_db()
+    user = db.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    if not user:
+        db.close()
+        abort(404)
+    
+    orders = db.execute("""
+        SELECT * FROM orders WHERE (seller_id=? OR buyer_id=?) AND status='completed'
+    """, (user_id, user_id)).fetchall()
+    
+    total_quantity_kg = sum((o["final_quantity"] or o["estimated_quantity"]) for o in orders)
+    total_tonnes = total_quantity_kg / 1000.0
+    co2_saved = round(total_tonnes * 2.85, 1)  # CO2 mitigation per tonne
+    trees_saved = int(total_tonnes * 14)
+    
+    total_gmv = sum(o["total_amount"] for o in orders)
+    credit_line = min(2500000, max(50000, round(total_gmv * 0.40, -3)))
+    
+    score = user["reliability_score"]
+    rating_letter = "AAA" if score >= 90 else ("AA" if score >= 80 else ("A" if score >= 70 else "BBB"))
+    
+    deposit = db.execute("SELECT * FROM deposits WHERE seller_id=?", (user_id,)).fetchone()
+    history = db.execute("SELECT * FROM reliability_history WHERE user_id=? ORDER BY created_at DESC LIMIT 10", (user_id,)).fetchall()
+    db.close()
+    
+    return render_template(
+        "trade_passport.html",
+        passport_user=user,
+        total_tonnes=round(total_tonnes, 2),
+        co2_saved=co2_saved,
+        trees_saved=trees_saved,
+        credit_line=credit_line,
+        rating_letter=rating_letter,
+        completed_orders_count=len(orders),
+        deposit=deposit,
+        history=history,
+    )
+
+
+@app.route("/my-passport")
+@login_required
+def my_passport():
+    return redirect(url_for("trade_passport", user_id=g.user["id"]))
+
+
+# ---------------------------------------------------------------------------
+# Seller Deposit Management & Transactions Ledger
+# ---------------------------------------------------------------------------
+
+@app.route("/seller/deposit", methods=["GET", "POST"])
+@role_required("seller")
+def seller_deposit():
+    db = get_db()
+    if request.method == "POST":
+        try:
+            amount = float(request.form.get("amount", 0))
+        except ValueError:
+            amount = 0
+
+        if amount > 0:
+            deposit = db.execute("SELECT * FROM deposits WHERE seller_id=?", (g.user["id"],)).fetchone()
+            if deposit:
+                db.execute("UPDATE deposits SET current_balance = current_balance + ? WHERE id=?", (amount, deposit["id"]))
+                db.execute(
+                    """INSERT INTO deposit_transactions (seller_id, deposit_id, transaction_type, amount, reason)
+                       VALUES (?,?,?,?, 'Voluntary security deposit top-up')""",
+                    (g.user["id"], deposit["id"], "topup", amount),
+                )
+            else:
+                cur = db.cursor()
+                cur.execute("INSERT INTO deposits (seller_id, deposit_amount, current_balance, status) VALUES (?,?,?, 'active')",
+                            (g.user["id"], amount, amount))
+                dep_id = cur.lastrowid
+                cur.execute(
+                    """INSERT INTO deposit_transactions (seller_id, deposit_id, transaction_type, amount, reason)
+                       VALUES (?,?,?,?, 'Initial security deposit payment')""",
+                    (g.user["id"], dep_id, "initial_deposit", amount),
+                )
+            db.execute("UPDATE users SET seller_type='verified_deposit' WHERE id=?", (g.user["id"],))
+            db.commit()
+            flash(f"₹{amount:,.0f} deposited successfully. Verified Deposit Seller privileges active.", "success")
+        db.close()
+        return redirect(url_for("seller_deposit"))
+
+    deposit = db.execute("SELECT * FROM deposits WHERE seller_id=?", (g.user["id"],)).fetchone()
+    transactions = db.execute(
+        "SELECT * FROM deposit_transactions WHERE seller_id=? ORDER BY created_at DESC", (g.user["id"],)
+    ).fetchall()
+    db.close()
+    return render_template("seller_deposit.html", deposit=deposit, transactions=transactions)
+
 
 
 # ---------------------------------------------------------------------------
@@ -1268,12 +1473,21 @@ def admin_dashboard():
 def admin_inspect(order_id):
     result = request.form["result"]
     notes = request.form.get("notes", "")
+    evidence_image_url = None
+    
+    if "evidence_image" in request.files:
+        file = request.files["evidence_image"]
+        if file and file.filename and allowed_file(file.filename):
+            filename = secure_filename(f"insp_{order_id}_{int(datetime.now().timestamp())}_{file.filename}")
+            file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+            evidence_image_url = f"/static/uploads/{filename}"
+
     db = get_db()
     order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     db.execute(
-        """INSERT INTO inspections (order_id, inspector_notes, quality_verified, estimated_quantity, result)
-           VALUES (?,?,?,?,?)""",
-        (order_id, notes, "Verified" if result == "passed" else "Not verified", order["estimated_quantity"], result),
+        """INSERT INTO inspections (order_id, inspector_notes, quality_verified, estimated_quantity, evidence_image_url, result)
+           VALUES (?,?,?,?,?,?)""",
+        (order_id, notes, "Verified" if result == "passed" else "Not verified", order["estimated_quantity"], evidence_image_url, result),
     )
     new_status = "inspection_passed" if result == "passed" else "inspection_failed"
     db.execute("UPDATE orders SET status=? WHERE id=?", (new_status, order_id))
@@ -1285,10 +1499,10 @@ def admin_inspect(order_id):
             if order["reverse_bid_id"]:
                 db.execute("UPDATE reverse_bids SET status='active' WHERE id=?", (order["reverse_bid_id"],))
     notify(db, order["buyer_id"], "Inspection completed",
-           f"Order #{order_id} inspection result: {result}.", order_id)
+           f"Order #{order_id} inspection result: {result}." + (" Certificate attached." if evidence_image_url else ""), order_id)
     db.commit()
     db.close()
-    flash(f"Inspection recorded as '{result}'.", "success")
+    flash(f"Inspection recorded as '{result}'. Certificate and evidence saved.", "success")
     return redirect(url_for("admin_dashboard"))
 
 
@@ -1297,16 +1511,24 @@ def admin_inspect(order_id):
 def admin_assign_logistics(order_id):
     db = get_db()
     order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    vehicle_number = request.form.get("vehicle_number", "MH-12-TR-4482").strip() or "MH-12-TR-4482"
+    driver_name = request.form.get("driver_name", "Sunil Verma").strip() or "Sunil Verma"
+    driver_phone = request.form.get("driver_phone", "9876543210").strip() or "9876543210"
+
     db.execute("UPDATE orders SET status='logistics_assigned' WHERE id=?", (order_id,))
-    db.execute("UPDATE pickups SET pickup_status='scheduled', scheduled_at=? WHERE order_id=?",
-               (datetime.utcnow().isoformat(), order_id))
+    db.execute("""
+        UPDATE pickups SET pickup_status='scheduled', scheduled_at=?, vehicle_number=?,
+                           driver_name=?, driver_phone=?, tracking_stage='Logistics Assigned',
+                           current_location='Logistics Hub Dispatch', eta_minutes=180
+        WHERE order_id=?
+    """, (datetime.utcnow().isoformat(), vehicle_number, driver_name, driver_phone, order_id))
     notify(db, order["seller_id"], "Pickup scheduled",
-           f"Logistics assigned for order #{order_id}. Pickup team will arrive soon.", order_id)
+           f"Logistics assigned for order #{order_id}. Vehicle: {vehicle_number}. Driver: {driver_name} ({driver_phone}).", order_id)
     notify(db, order["buyer_id"], "Pickup scheduled",
-           f"Logistics assigned for order #{order_id}.", order_id)
+           f"Logistics assigned for order #{order_id}. Vehicle: {vehicle_number}.", order_id)
     db.commit()
     db.close()
-    flash("Logistics assigned and pickup scheduled.", "success")
+    flash(f"Logistics assigned (Vehicle: {vehicle_number}) and pickup scheduled.", "success")
     return redirect(url_for("admin_dashboard"))
 
 
@@ -1314,10 +1536,23 @@ def admin_assign_logistics(order_id):
 @role_required("admin")
 def admin_record_pickup(order_id):
     final_weight = float(request.form["final_weight"])
+    weighbridge_slip_url = None
+    
+    if "weighbridge_slip" in request.files:
+        file = request.files["weighbridge_slip"]
+        if file and file.filename and allowed_file(file.filename):
+            filename = secure_filename(f"weigh_{order_id}_{int(datetime.now().timestamp())}_{file.filename}")
+            file.save(os.path.join(app.config["UPLOAD_FOLDER"], filename))
+            weighbridge_slip_url = f"/static/uploads/{filename}"
+
     db = get_db()
     order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
-    db.execute("UPDATE pickups SET final_weight=?, pickup_status='loaded' WHERE order_id=?",
-               (final_weight, order_id))
+    db.execute("""
+        UPDATE pickups SET final_weight=?, weighbridge_slip_url=COALESCE(?, weighbridge_slip_url),
+                           pickup_status='loaded', tracking_stage='Weighed & Dispatched',
+                           current_location='Industrial Weighbridge Station', eta_minutes=120
+        WHERE order_id=?
+    """, (final_weight, weighbridge_slip_url, order_id))
     db.execute("UPDATE orders SET final_quantity=?, status='in_transit' WHERE id=?",
                (final_weight, order_id))
     db.execute("INSERT INTO deliveries (order_id, delivery_status) VALUES (?, 'pending')", (order_id,))
@@ -1325,7 +1560,7 @@ def admin_record_pickup(order_id):
     mismatch = abs(final_weight - order["estimated_quantity"]) > tolerance
     if mismatch:
         notify(db, order["buyer_id"], "Weight mismatch at pickup",
-               f"Order #{order_id}: estimated {order['estimated_quantity']}, actual {final_weight}. Please review.",
+               f"Order #{order_id}: estimated {order['estimated_quantity']}, actual {final_weight}. Please review weighbridge receipt.",
                order_id)
     db.commit()
     db.close()
@@ -1335,12 +1570,38 @@ def admin_record_pickup(order_id):
     return redirect(url_for("admin_dashboard"))
 
 
+@app.route("/admin/orders/<int:order_id>/update-tracking", methods=["POST"])
+@role_required("admin")
+def update_tracking(order_id):
+    tracking_stage = request.form["tracking_stage"]
+    current_location = request.form.get("current_location", "In Transit Highway Corridor")
+    try:
+        eta_minutes = int(request.form.get("eta_minutes", 60))
+    except ValueError:
+        eta_minutes = 60
+
+    db = get_db()
+    db.execute("""
+        UPDATE pickups SET tracking_stage=?, current_location=?, eta_minutes=?
+        WHERE order_id=?
+    """, (tracking_stage, current_location, eta_minutes, order_id))
+    
+    order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
+    notify(db, order["buyer_id"], "Live Transit Update",
+           f"Order #{order_id}: {tracking_stage} - {current_location}. ETA: {eta_minutes} mins.", order_id)
+    db.commit()
+    db.close()
+    flash(f"Live tracking updated: {tracking_stage} ({current_location}).", "success")
+    return redirect(url_for("order_detail", order_id=order_id))
+
+
 @app.route("/admin/orders/<int:order_id>/mark-delivered", methods=["POST"])
 @role_required("admin")
 def admin_mark_delivered(order_id):
     db = get_db()
     order = db.execute("SELECT * FROM orders WHERE id=?", (order_id,)).fetchone()
     db.execute("UPDATE deliveries SET delivery_status='delivered' WHERE order_id=?", (order_id,))
+    db.execute("UPDATE pickups SET tracking_stage='Delivered at Destination Gate', eta_minutes=0 WHERE order_id=?", (order_id,))
     db.execute("UPDATE orders SET status='delivered' WHERE id=?", (order_id,))
     notify(db, order["buyer_id"], "Material delivered",
            f"Order #{order_id} has been delivered. Please confirm or raise an issue.", order_id)
@@ -1355,6 +1616,8 @@ def admin_mark_delivered(order_id):
 def admin_resolve_dispute(dispute_id):
     resolution = request.form["resolution"]
     responsible = request.form["responsible_party"]
+    penalty_amount = float(request.form.get("penalty_amount", 0) or 0)
+    
     db = get_db()
     dispute = db.execute("SELECT * FROM disputes WHERE id=?", (dispute_id,)).fetchone()
     order = db.execute("SELECT * FROM orders WHERE id=?", (dispute["order_id"],)).fetchone()
@@ -1376,6 +1639,21 @@ def admin_resolve_dispute(dispute_id):
     if responsible == "seller":
         log_reliability_change(db, order["seller_id"], -8, f"Dispute resolved against seller: {dispute['issue_type']}", order["id"])
         db.execute("UPDATE users SET disputes_count = disputes_count + 1 WHERE id=?", (order["seller_id"],))
+        
+        # Security Deposit Deduction Workflow
+        if penalty_amount > 0:
+            seller_deposit = db.execute("SELECT * FROM deposits WHERE seller_id=?", (order["seller_id"],)).fetchone()
+            if seller_deposit and seller_deposit["current_balance"] > 0:
+                deducted = min(penalty_amount, seller_deposit["current_balance"])
+                db.execute("UPDATE deposits SET current_balance = current_balance - ? WHERE id=?", (deducted, seller_deposit["id"]))
+                db.execute(
+                    """INSERT INTO deposit_transactions (seller_id, deposit_id, transaction_type, amount, reason, order_id)
+                       VALUES (?,?,?,?, ?, ?)""",
+                    (order["seller_id"], seller_deposit["id"], "deduction", deducted,
+                     f"Penalty deduction for Dispute #{dispute_id}: {dispute['issue_type']}", order["id"]),
+                )
+                notify(db, order["seller_id"], "Security Deposit Deduction",
+                       f"₹{deducted:,.0f} has been deducted from your verified deposit account following Dispute #{dispute_id}.", order["id"])
     elif responsible == "buyer":
         log_reliability_change(db, order["buyer_id"], -5, f"Dispute resolved against buyer: {dispute['issue_type']}", order["id"])
         db.execute("UPDATE users SET disputes_count = disputes_count + 1 WHERE id=?", (order["buyer_id"],))
@@ -1384,7 +1662,7 @@ def admin_resolve_dispute(dispute_id):
     notify(db, order["seller_id"], "Dispute resolved", f"Resolution: {resolution}.", order["id"])
     db.commit()
     db.close()
-    flash("Dispute resolved.", "success")
+    flash("Dispute resolved successfully with penalty/audit ledger updated.", "success")
     return redirect(url_for("admin_dashboard"))
 
 

@@ -30,15 +30,20 @@
     </a>
     <div class="flex items-center gap-5 text-sm font-medium">
       <a href="{{ url_for('browse_listings') }}" class="hover:text-rust transition">Marketplace</a>
+      <a href="{{ url_for('market_intelligence') }}" class="hover:text-rust transition flex items-center gap-1">
+        <span>Market Intel</span>
+        <span class="bg-emerald-500/20 text-emerald-300 text-[10px] px-1 rounded font-bold">LIVE</span>
+      </a>
       {% if g.user %}
         <a href="{{ url_for('dashboard') }}" class="hover:text-rust transition">Dashboard</a>
         {% if g.user['role'] == 'buyer' %}
-          <a href="{{ url_for('new_request') }}" class="hover:text-rust transition">Post Buying Request</a>
+          <a href="{{ url_for('new_request') }}" class="hover:text-rust transition">Post Request</a>
           <a href="{{ url_for('my_requests') }}" class="hover:text-rust transition">My Requests</a>
         {% elif g.user['role'] == 'seller' %}
           <a href="{{ url_for('browse_requests') }}" class="hover:text-rust transition">Buyer Requests</a>
-          <a href="{{ url_for('my_bids') }}" class="hover:text-rust transition">My Bids</a>
+          <a href="{{ url_for('seller_deposit') }}" class="hover:text-rust transition">Trust Vault</a>
         {% endif %}
+        <a href="{{ url_for('my_passport') }}" class="hover:text-rust transition">Trade Passport</a>
         <a href="{{ url_for('notifications') }}" class="relative hover:text-rust transition">
           Notifications
           {% if unread_notifications and unread_notifications > 0 %}

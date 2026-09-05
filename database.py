@@ -28,6 +28,37 @@ def ensure_schema():
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
+
+    # Create deposit_transactions if missing
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS deposit_transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            seller_id INTEGER NOT NULL REFERENCES users(id),
+            deposit_id INTEGER REFERENCES deposits(id),
+            transaction_type TEXT NOT NULL CHECK(transaction_type IN ('initial_deposit','deduction','refund','topup')),
+            amount REAL NOT NULL,
+            reason TEXT NOT NULL,
+            order_id INTEGER REFERENCES orders(id),
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
+
+    # Create market_price_trends if missing
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS market_price_trends (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            material_name TEXT NOT NULL,
+            category TEXT NOT NULL,
+            grade TEXT,
+            current_price REAL NOT NULL,
+            previous_price REAL NOT NULL,
+            weekly_change_pct REAL NOT NULL,
+            volume_traded_tonnes REAL NOT NULL,
+            unit TEXT NOT NULL DEFAULT 'kg',
+            market_sentiment TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+    """)
     
     # Check users columns
     user_cols = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
@@ -45,7 +76,58 @@ def ensure_schema():
     req_cols = [row[1] for row in conn.execute("PRAGMA table_info(buyer_requests)").fetchall()]
     if "image_url" not in req_cols:
         conn.execute("ALTER TABLE buyer_requests ADD COLUMN image_url TEXT")
-        
+
+    # Check bids columns
+    bid_cols = [row[1] for row in conn.execute("PRAGMA table_info(bids)").fetchall()]
+    if "counter_price" not in bid_cols:
+        conn.execute("ALTER TABLE bids ADD COLUMN counter_price REAL")
+    if "counter_message" not in bid_cols:
+        conn.execute("ALTER TABLE bids ADD COLUMN counter_message TEXT")
+    if "last_acted_by" not in bid_cols:
+        conn.execute("ALTER TABLE bids ADD COLUMN last_acted_by TEXT DEFAULT 'buyer'")
+    if "updated_at" not in bid_cols:
+        conn.execute("ALTER TABLE bids ADD COLUMN updated_at TEXT DEFAULT (datetime('now'))")
+
+    # Check inspections columns
+    insp_cols = [row[1] for row in conn.execute("PRAGMA table_info(inspections)").fetchall()]
+    if "evidence_image_url" not in insp_cols:
+        conn.execute("ALTER TABLE inspections ADD COLUMN evidence_image_url TEXT")
+
+    # Check pickups columns
+    pickup_cols = [row[1] for row in conn.execute("PRAGMA table_info(pickups)").fetchall()]
+    if "weighbridge_slip_url" not in pickup_cols:
+        conn.execute("ALTER TABLE pickups ADD COLUMN weighbridge_slip_url TEXT")
+    if "vehicle_number" not in pickup_cols:
+        conn.execute("ALTER TABLE pickups ADD COLUMN vehicle_number TEXT")
+    if "driver_name" not in pickup_cols:
+        conn.execute("ALTER TABLE pickups ADD COLUMN driver_name TEXT")
+    if "driver_phone" not in pickup_cols:
+        conn.execute("ALTER TABLE pickups ADD COLUMN driver_phone TEXT")
+    if "tracking_stage" not in pickup_cols:
+        conn.execute("ALTER TABLE pickups ADD COLUMN tracking_stage TEXT DEFAULT 'Pickup Scheduled'")
+    if "current_location" not in pickup_cols:
+        conn.execute("ALTER TABLE pickups ADD COLUMN current_location TEXT DEFAULT 'Origin Weighbridge'")
+    if "eta_minutes" not in pickup_cols:
+        conn.execute("ALTER TABLE pickups ADD COLUMN eta_minutes INTEGER DEFAULT 180")
+
+    # Seed market price trends if empty
+    trend_count = conn.execute("SELECT COUNT(*) c FROM market_price_trends").fetchone()["c"]
+    if trend_count == 0:
+        trends = [
+            ("Copper Wire Scrap", "Metal", "Grade 1 (Bright)", 720.0, 705.0, 2.13, 142.5, "kg", "Bullish"),
+            ("Aluminium Sheet Scrap", "Metal", "Grade A", 185.0, 190.0, -2.63, 380.0, "kg", "Stable"),
+            ("Brass Honey Scrap", "Metal", "Honey Grade", 450.0, 442.0, 1.81, 95.0, "kg", "Bullish"),
+            ("Heavy Melting Steel (HMS 1&2)", "Metal", "6mm+ Offcuts", 28.5, 27.8, 2.52, 1250.0, "kg", "High Demand"),
+            ("HDPE Mixed Plastic Scrap", "Plastic", "Post-industrial Bales", 32.0, 31.0, 3.23, 210.0, "kg", "Strong Demand"),
+            ("PET Bottle Scrap", "Plastic", "Flaked & Washed", 42.0, 43.5, -3.45, 185.0, "kg", "Bearish"),
+            ("Corrugated Paper (OCC)", "Paper", "Baled Brown Craft", 14.5, 14.0, 3.57, 620.0, "kg", "Stable"),
+            ("Assorted PCB Circuit Boards", "E-Waste", "Mixed Motherboards", 410.0, 395.0, 3.80, 45.0, "kg", "Bullish"),
+        ]
+        conn.executemany("""
+            INSERT INTO market_price_trends (material_name, category, grade, current_price, previous_price, weekly_change_pct, volume_traded_tonnes, unit, market_sentiment)
+            VALUES (?,?,?,?,?,?,?,?,?)
+        """, trends)
+
     conn.commit()
     conn.close()
 

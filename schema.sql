@@ -85,8 +85,12 @@ CREATE TABLE bids (
     bid_price REAL NOT NULL,
     quantity REAL NOT NULL,
     message TEXT,
-    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','withdrawn','accepted','rejected')),
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    counter_price REAL,
+    counter_message TEXT,
+    last_acted_by TEXT NOT NULL DEFAULT 'buyer' CHECK(last_acted_by IN ('buyer','seller')),
+    status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','countered','withdrawn','accepted','rejected')),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Buyer -> Seller Reverse Bidding: a buyer posts what they need, sellers bid to fulfil it.
@@ -159,6 +163,7 @@ CREATE TABLE inspections (
     inspector_notes TEXT,
     quality_verified TEXT,
     estimated_quantity REAL,
+    evidence_image_url TEXT,
     result TEXT NOT NULL DEFAULT 'requested' CHECK(result IN ('requested','passed','failed','conditional')),
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -178,6 +183,13 @@ CREATE TABLE pickups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id INTEGER NOT NULL REFERENCES orders(id),
     final_weight REAL,
+    weighbridge_slip_url TEXT,
+    vehicle_number TEXT,
+    driver_name TEXT,
+    driver_phone TEXT,
+    tracking_stage TEXT NOT NULL DEFAULT 'Pickup Scheduled',
+    current_location TEXT DEFAULT 'Origin Weighbridge',
+    eta_minutes INTEGER DEFAULT 180,
     pickup_status TEXT NOT NULL DEFAULT 'scheduled' CHECK(pickup_status IN ('scheduled','weighed','loaded','in_transit')),
     scheduled_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -204,6 +216,31 @@ CREATE TABLE disputes (
     resolved_at TEXT
 );
 
+CREATE TABLE deposit_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    seller_id INTEGER NOT NULL REFERENCES users(id),
+    deposit_id INTEGER REFERENCES deposits(id),
+    transaction_type TEXT NOT NULL CHECK(transaction_type IN ('initial_deposit','deduction','refund','topup')),
+    amount REAL NOT NULL,
+    reason TEXT NOT NULL,
+    order_id INTEGER REFERENCES orders(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE market_price_trends (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    material_name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    grade TEXT,
+    current_price REAL NOT NULL,
+    previous_price REAL NOT NULL,
+    weekly_change_pct REAL NOT NULL,
+    volume_traded_tonnes REAL NOT NULL,
+    unit TEXT NOT NULL DEFAULT 'kg',
+    market_sentiment TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE reliability_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL REFERENCES users(id),
@@ -228,3 +265,5 @@ CREATE INDEX idx_buyer_requests_status ON buyer_requests(status);
 CREATE INDEX idx_reverse_bids_request ON reverse_bids(request_id);
 CREATE INDEX idx_reverse_bids_seller ON reverse_bids(seller_id);
 CREATE INDEX idx_orders_request ON orders(request_id);
+CREATE INDEX idx_deposit_tx_seller ON deposit_transactions(seller_id);
+

@@ -37,7 +37,16 @@
       <h2 class="font-semibold text-navy mb-3">1. Inspection</h2>
       {% if inspection and inspection['result'] != 'requested' %}
         <p class="text-sm mb-1">Result: {{ inspection['result']|badge|safe }}</p>
-        <p class="text-sm text-slate-500">{{ inspection['inspector_notes'] }}</p>
+        <p class="text-sm text-slate-500 mb-2">{{ inspection['inspector_notes'] }}</p>
+        {% if inspection['evidence_image_url'] %}
+        <div class="mt-3 pt-3 border-t">
+          <span class="text-xs font-semibold text-slate-600 block mb-1">Inspection Certificate / Evidence:</span>
+          <a href="{{ inspection['evidence_image_url'] }}" target="_blank" class="inline-flex items-center gap-1.5 text-xs font-semibold text-rust hover:underline bg-orange-50 px-2.5 py-1.5 rounded border border-orange-200">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+            View Inspection Evidence Document
+          </a>
+        </div>
+        {% endif %}
       {% else %}
         <p class="text-sm text-slate-500">Inspection requested — awaiting platform inspector.</p>
       {% endif %}
@@ -59,10 +68,58 @@
     </div>
 
     <div class="card p-5">
-      <h2 class="font-semibold text-navy mb-3">3. Logistics &amp; Pickup</h2>
+      <h2 class="font-semibold text-navy mb-3">3. Logistics &amp; Pickup &amp; Live Tracking</h2>
       {% if pickup %}
-        <p class="text-sm mb-1">Pickup status: {{ pickup['pickup_status']|badge|safe }}</p>
-        <p class="text-sm text-slate-500">Final weight: {{ pickup['final_weight'] or 'Not yet recorded' }}</p>
+        <div class="grid grid-cols-2 gap-3 text-sm mb-3">
+          <div><span class="text-slate-400 block text-xs">Pickup Status</span><span class="font-medium">{{ pickup['pickup_status']|badge|safe }}</span></div>
+          <div><span class="text-slate-400 block text-xs">Final Weighbridge Weight</span><span class="font-medium text-navy">{{ pickup['final_weight'] or 'Not yet recorded' }} {{ order['unit'] if pickup['final_weight'] else '' }}</span></div>
+        </div>
+
+        {% if pickup['weighbridge_slip_url'] %}
+        <div class="mb-4 pt-2 pb-2 border-t border-b">
+          <span class="text-xs font-semibold text-slate-600 block mb-1">Weighbridge Scale Slip:</span>
+          <a href="{{ pickup['weighbridge_slip_url'] }}" target="_blank" class="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:underline bg-emerald-50 px-2.5 py-1.5 rounded border border-emerald-200">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+            View Official Weighbridge Receipt / Scale Slip
+          </a>
+        </div>
+        {% endif %}
+
+        <!-- Live GPS Waypoint Simulator Box -->
+        <div class="bg-slate-900 text-white rounded-xl p-4 mt-2">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <div class="flex items-center gap-2">
+              <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span class="text-xs font-bold uppercase tracking-wider text-emerald-400">Live GPS Telemetry</span>
+            </div>
+            <span class="text-xs text-slate-400 font-mono">Stage: {{ pickup['tracking_stage'] or 'Dispatched' }}</span>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 my-3 text-xs">
+            <div>
+              <span class="text-slate-400 block">Assigned Vehicle</span>
+              <span class="font-mono font-bold text-slate-100">{{ pickup['vehicle_number'] or 'TRK-9842-DL' }}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block">Fleet Driver</span>
+              <span class="font-semibold text-slate-100">{{ pickup['driver_name'] or 'Rajesh Kumar' }}</span>
+              <span class="text-[10px] text-slate-400 block">{{ pickup['driver_phone'] or '+91 98765 43210' }}</span>
+            </div>
+            <div>
+              <span class="text-slate-400 block">Current Geo-Location</span>
+              <span class="font-semibold text-amber-300">{{ pickup['current_location'] or 'Yard Dispatch Hub' }}</span>
+            </div>
+          </div>
+
+          <div class="bg-slate-800/80 rounded-lg p-3 flex items-center justify-between mt-2">
+            <div class="text-xs text-slate-300">
+              Estimated Delivery ETA: <strong class="text-white">{{ pickup['eta_minutes'] or 45 }} mins</strong>
+            </div>
+            <div class="text-[11px] text-emerald-400 font-semibold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800">
+              Transit Active
+            </div>
+          </div>
+        </div>
       {% else %}
         <p class="text-sm text-slate-500">Logistics not yet assigned.</p>
       {% endif %}

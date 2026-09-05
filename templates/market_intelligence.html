@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block title %}Market Intelligence & Price Trends — ScrapTrade Hub{% endblock %}
+{% block content %}
+
+<div class="mb-8">
+  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div>
+      <span class="text-xs font-semibold uppercase tracking-wider text-rust">Live Secondary Commodity Index</span>
+      <h1 class="text-3xl font-bold text-navy mt-1">Market Intelligence & Price Trends</h1>
+      <p class="text-sm text-slate-500 mt-1">Real-time benchmark rates, weekly movement, and supply-demand analytics across Indian recycling corridors.</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <span class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
+        <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Live Market Feed
+      </span>
+      <span class="text-xs text-slate-400">Updated today</span>
+    </div>
+  </div>
+</div>
+
+<!-- Price Trend Benchmark Cards -->
+<div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+  {% for t in trends %}
+  <div class="card p-5 hover:shadow-md transition border-l-4 {{ 'border-l-emerald-500' if t['weekly_change_pct'] > 0 else ('border-l-red-500' if t['weekly_change_pct'] < 0 else 'border-l-blue-500') }}">
+    <div class="flex justify-between items-start mb-2">
+      <span class="text-[11px] font-bold uppercase tracking-wider text-slate-400">{{ t['category'] }}</span>
+      <span class="text-xs font-semibold px-2 py-0.5 rounded {{ 'bg-emerald-50 text-emerald-700' if t['weekly_change_pct'] > 0 else ('bg-red-50 text-red-700' if t['weekly_change_pct'] < 0 else 'bg-slate-100 text-slate-700') }}">
+        {{ '+' if t['weekly_change_pct'] > 0 else '' }}{{ t['weekly_change_pct'] }}%
+      </span>
+    </div>
+    <h3 class="font-bold text-navy text-base leading-tight">{{ t['material_name'] }}</h3>
+    <p class="text-xs text-slate-500 mb-3">{{ t['grade'] }}</p>
+    
+    <div class="flex items-baseline justify-between mt-auto pt-2 border-t border-slate-100">
+      <div>
+        <span class="text-xs text-slate-400 block">Avg Rate</span>
+        <span class="text-xl font-extrabold text-navy">₹{{ "{:,.1f}".format(t['current_price']) }}<span class="text-xs font-normal text-slate-500">/{{ t['unit'] }}</span></span>
+      </div>
+      <div class="text-right">
+        <span class="text-[11px] text-slate-400 block">Sentiment</span>
+        <span class="text-xs font-semibold {{ 'text-emerald-600' if t['market_sentiment'] in ('Bullish','High Demand','Strong Demand') else 'text-slate-600' }}">{{ t['market_sentiment'] }}</span>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Valuation & Active Deals Analysis -->
+<div class="grid lg:grid-cols-3 gap-8">
+  <div class="lg:col-span-2 card p-6">
+    <div class="flex justify-between items-center mb-5 pb-3 border-b">
+      <div>
+        <h2 class="text-lg font-bold text-navy">National Scrap Rate Matrix</h2>
+        <p class="text-xs text-slate-500">Weighted average trade price based on verified weighbridge settlements</p>
+      </div>
+      <span class="text-xs bg-slate-100 text-slate-600 px-2.5 py-1 rounded font-medium">B2B Standard Index</span>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm text-left">
+        <thead>
+          <tr class="text-xs text-slate-400 uppercase border-b bg-slate-50/50">
+            <th class="py-2.5 px-3">Commodity & Grade</th>
+            <th class="py-2.5 px-3">Current Benchmark</th>
+            <th class="py-2.5 px-3">Prev Week</th>
+            <th class="py-2.5 px-3">Weekly $\Delta$</th>
+            <th class="py-2.5 px-3">24h Vol</th>
+            <th class="py-2.5 px-3">Sentiment</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          {% for t in trends %}
+          <tr class="hover:bg-slate-50/80 transition">
+            <td class="py-3 px-3">
+              <span class="font-semibold text-navy">{{ t['material_name'] }}</span>
+              <span class="block text-xs text-slate-400">{{ t['grade'] }}</span>
+            </td>
+            <td class="py-3 px-3 font-bold text-navy">₹{{ "{:,.1f}".format(t['current_price']) }}/{{ t['unit'] }}</td>
+            <td class="py-3 px-3 text-slate-500">₹{{ "{:,.1f}".format(t['previous_price']) }}</td>
+            <td class="py-3 px-3 font-semibold {{ 'text-emerald-600' if t['weekly_change_pct'] > 0 else ('text-red-600' if t['weekly_change_pct'] < 0 else 'text-slate-600') }}">
+              {{ '+' if t['weekly_change_pct'] > 0 else '' }}{{ t['weekly_change_pct'] }}%
+            </td>
+            <td class="py-3 px-3 text-slate-600">{{ t['volume_traded_tonnes'] }} T</td>
+            <td class="py-3 px-3">
+              <span class="inline-block px-2 py-0.5 rounded text-[11px] font-semibold {{ 'bg-emerald-100 text-emerald-800' if t['market_sentiment'] in ('Bullish','High Demand','Strong Demand') else 'bg-slate-100 text-slate-700' }}">
+                {{ t['market_sentiment'] }}
+              </span>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Best Deal Recommendations Widget -->
+  <div class="space-y-6">
+    <div class="card p-6 bg-gradient-to-br from-navy to-slate-900 text-white">
+      <div class="flex items-center gap-2 text-rust mb-2">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        <span class="text-xs font-bold uppercase tracking-wider text-amber-400">AI Valuation Engine</span>
+      </div>
+      <h3 class="text-lg font-bold">Deal Pricing Intelligence</h3>
+      <p class="text-xs text-slate-300 mt-1 mb-4">Our automated pricing engine evaluates every listing against current commodity spot rates and seller reliability.</p>
+      
+      <div class="space-y-2 text-xs">
+        <div class="flex justify-between py-1.5 border-b border-white/10">
+          <span class="text-slate-300">Average Settlement Spread:</span>
+          <span class="font-semibold text-emerald-400">&plusmn; 2.4%</span>
+        </div>
+        <div class="flex justify-between py-1.5 border-b border-white/10">
+          <span class="text-slate-300">Weighbridge Tolerance Accuracy:</span>
+          <span class="font-semibold text-emerald-400">98.8%</span>
+        </div>
+        <div class="flex justify-between py-1.5">
+          <span class="text-slate-300">Escrow Payment Speed:</span>
+          <span class="font-semibold text-amber-300">Instant on Delivery</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Listings Near or Below Benchmark -->
+    <div class="card p-5">
+      <h3 class="font-bold text-navy text-sm mb-3">Recent Marketplace Opportunities</h3>
+      <div class="space-y-3">
+        {% for l in listings %}
+        <a href="{{ url_for('listing_detail', listing_id=l['id']) }}" class="block p-3 border rounded-lg hover:border-rust hover:bg-slate-50 transition">
+          <div class="flex justify-between items-start">
+            <div>
+              <p class="font-semibold text-navy text-xs">{{ l['material_type'] }}</p>
+              <p class="text-[11px] text-slate-500">{{ l['location'] }} &bull; {{ l['estimated_quantity'] }} {{ l['unit'] }}</p>
+            </div>
+            <span class="font-bold text-xs text-rust">₹{{ "{:,.0f}".format(l['expected_price']) }}/{{ l['unit'] }}</span>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+      <a href="{{ url_for('browse_listings') }}" class="block text-center text-xs font-semibold text-rust hover:underline mt-4">View All Marketplace Listings &rarr;</a>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
