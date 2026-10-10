@@ -27,6 +27,23 @@ GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
 GOOGLE_REDIRECT_URI = os.environ.get("GOOGLE_REDIRECT_URI", "")
 
 
+def setup_database():
+    """Ensure database exists and is properly seeded on start."""
+    try:
+        if not os.path.exists(DB_PATH):
+            init_db()
+            seed_db()
+        else:
+            ensure_schema()
+    except Exception as e:
+        print(f"Database setup note: {e}")
+
+
+# Run on startup (including WSGI/gunicorn in production) unless testing
+if not os.environ.get("PYTEST_CURRENT_TEST") and not os.environ.get("TESTING"):
+    setup_database()
+
+
 def allowed_file(filename):
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
@@ -1719,9 +1736,7 @@ def inject_unread_count():
 
 
 if __name__ == "__main__":
-    if not os.path.exists(DB_PATH):
-        init_db()
-        seed_db()
-    else:
-        ensure_schema()
-    app.run(host="0.0.0.0", port=8000, debug=True)
+    setup_database()
+    port = int(os.environ.get("PORT", 8000))
+    debug = os.environ.get("FLASK_ENV") != "production"
+    app.run(host="0.0.0.0", port=port, debug=debug)
