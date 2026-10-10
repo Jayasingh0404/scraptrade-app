@@ -1738,5 +1738,33 @@ def inject_unread_count():
 if __name__ == "__main__":
     setup_database()
     port = int(os.environ.get("PORT", 8000))
-    debug = os.environ.get("FLASK_ENV") != "production"
-    app.run(host="0.0.0.0", port=port, debug=debug)
+    is_prod = os.environ.get("FLASK_ENV") == "production" or bool(os.environ.get("RENDER"))
+
+    if is_prod:
+        try:
+            from gunicorn.app.base import BaseApplication
+
+            class StandaloneApplication(BaseApplication):
+                def __init__(self, application, options=None):
+                    self.options = options or {}
+                    self.application = application
+                    super().__init__()
+
+                def load_config(self):
+                    for key, val in self.options.items():
+                        if key in self.cfg.settings and val is not None:
+                            self.cfg.set(key.lower(), val)
+
+                def load(self):
+                    return self.application
+
+            options = {
+                "bind": f"0.0.0.0:{port}",
+                "workers": 2,
+                "timeout": 120,
+            }
+            StandaloneApplication(app, options).run()
+        except ImportError:
+            app.run(host="0.0.0.0", port=port, debug=False)
+    else:
+        app.run(host="0.0.0.0", port=port, debug=True)
