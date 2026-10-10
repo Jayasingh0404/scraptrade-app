@@ -2,7 +2,7 @@
 
 A full-featured, end-to-end B2B and consumer scrap trading marketplace: sellers list scrap lots with material photos, buyers place bids, or buyers post procurement requests for verified sellers to fulfill (reverse bidding). The platform orchestrates the complete lifecycle: KYC verification, inspection, held escrow-style payments, logistics dispatch with weighbridge tolerance checks, delivery confirmation, dispute arbitration, and dynamic reliability scoring.
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Jayasingh0404/Scraptrade)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Jayasingh0404/scraptrade-app)
 
 ---
 
